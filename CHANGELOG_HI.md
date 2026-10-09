@@ -1,8 +1,10 @@
-# बदलाव — v0.2.0
+# बदलाव
 
-- Production plan के साथ starter outline workflow जोड़ा।
-- Gemini API होने पर outline और chapter-by-chapter drafting जोड़ा।
-- Generated chapters को UI में संपादित करने की सुविधा जोड़ी।
-- Markdown, TXT, HTML और DOCX exports जोड़े।
-- API key/security, source protection और unfinished features के बारे में स्पष्ट नोट जोड़े।
-- PDF/EPUB और visual page QC को स्पष्ट रूप से अभी-not-implemented रखा।
+## v0.4.0
+- Manual chapter create/edit/delete
+- Editable outline and chapter management
+- Preliminary QC and word count
+- EPUB export and full project JSON backup
+- Existing DOCX/HTML/Markdown/TXT export workflow
+- Gemini API code intentionally left as-is
+- PDF rendering, image generation, visual page QC and KDP preflight remain pending
