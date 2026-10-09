@@ -4,7 +4,7 @@ from io import BytesIO
 from datetime import datetime
 from xml.sax.saxutils import escape
 
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 TYPES = ["Auto Detect","Business Book","Novel / Fiction","Children's Book","Workbook / Activity Book","Textbook / Study Notes","Cookbook","Religious / Spiritual","History / Mythology","Self-help","Biography","Poetry","Magazine","Product Catalog","Technical Manual","Travel Book","Other"]
 LANGS = ["Hindi","English","Hinglish","Bengali","Other","Auto Detect"]
 STYLES = ["Director decides automatically","Premium Literary","Minimal","Modern","Luxury","Educational","Illustrated","Devotional","Editorial / Magazine","Custom"]
@@ -65,8 +65,34 @@ def make_plan(idea, source, mode, kind, language, audience, goal, style, constra
                         "KDP compliance is not certified automatically"]
     }
 
+def clean_book_title(idea, fallback="Untitled Book"):
+    """Extract a useful title from a multi-line brief without retaining labels like 'किताब का विषय:'."""
+    ignored = {"किताब का विषय", "विषय", "book idea", "book topic", "title", "शीर्षक", "उद्देश्य", "पाठक", "भाषा", "शैली"}
+    for raw in (idea or "").splitlines():
+        line = raw.strip().strip("#*-• \t")
+        if not line:
+            continue
+        # Remove common labels while preserving text after the colon.
+        if ":" in line or "：" in line:
+            left, right = re.split(r"[:：]", line, maxsplit=1)
+            if left.strip().lower() in ignored:
+                line = right.strip()
+        line = line.strip('"“”‘’ ')
+        if not line:
+            continue
+        if line.rstrip(":：").strip().lower() in ignored:
+            continue
+        # Skip instruction labels and pick the first meaningful content line.
+        if line.lower().startswith(("उद्देश्य", "पाठक", "भाषा", "शैली", "महत्वपूर्ण नियम", "objective", "audience", "language", "style")):
+            continue
+        return line[:120]
+    return fallback
+
+def normalized_heading(text):
+    return re.sub(r"\s+", " ", (text or "").strip()).casefold()
+
 def local_outline(idea, source, mode, kind, language, audience, constraints):
-    title = (idea.strip().splitlines()[0][:120] if idea.strip() else "Untitled Book")
+    title = clean_book_title(idea, "Untitled Book")
     chosen = detect_type(idea + source[:2000], kind)
     if mode == "Manuscript to Book" and source.strip():
         headings = [x.strip().lstrip("# ").strip() for x in source.splitlines() if x.strip().startswith("#")]
@@ -293,7 +319,7 @@ with a:
 with b:
     st.subheader("Master Design Director")
     st.markdown("- Genre-aware production planning\n- No forced page count\n- Editable outline and chapters\n- Preliminary content QC\n- EPUB / DOCX / HTML / MD / TXT exports")
-    st.info("इस version में true PDF typesetting, image generation, visual page-by-page QC और KDP certification शामिल नहीं हैं।")
+    st.info("PDF export उपलब्ध है, लेकिन अभी basic है। हिंदी/बंगाली के लिए सही Unicode TTF फ़ॉन्ट दें। वास्तविक पेज-दर-पेज विज़ुअल QC, image generation और KDP certification अभी उपलब्ध नहीं हैं।")
 
 if st.button("Create / refresh production plan",type="primary",use_container_width=True):
     if not idea.strip() and not source.strip(): st.warning("Idea लिखें या manuscript upload करें।")
@@ -356,14 +382,30 @@ if "outline" in st.session_state:
                 st.success("Draft तैयार है; publication से पहले review करें।")
             except Exception as e: st.error(f"Draft नहीं बन सका: {e}")
 
-st.divider(); st.subheader("Add or edit text manually")
-manual_title=st.text_input("Chapter heading",key="manual_title")
-manual_text=st.text_area("Chapter text",height=170,key="manual_text")
-if st.button("Save manual chapter",use_container_width=True):
-    if not manual_title.strip() or not manual_text.strip(): st.warning("Heading और text दोनों भरें।")
+st.divider(); st.subheader("Add or edit chapter text manually")
+st.caption("Chapter heading = अध्याय का शीर्षक। Chapter text = उस अध्याय की पूरी सामग्री। अगर Outline में अध्याय पहले से है, तो उसी अध्याय को चुनें ताकि duplicate chapter न बने।")
+outline_for_manual = st.session_state.get("outline", {})
+outline_chapters_for_manual = outline_for_manual.get("chapters", []) if isinstance(outline_for_manual, dict) else []
+manual_choices = ["नया अध्याय बनाएँ"] + [
+    f"{i+1}. {c.get('title','Untitled')}" for i,c in enumerate(outline_chapters_for_manual) if isinstance(c, dict)
+]
+manual_target = st.selectbox("यह टेक्स्ट किस अध्याय का है?", manual_choices, key="manual_target")
+default_manual_title = ""
+if manual_target != "नया अध्याय बनाएँ":
+    try:
+        manual_index = int(manual_target.split(".", 1)[0]) - 1
+        default_manual_title = outline_chapters_for_manual[manual_index].get("title", "")
+    except Exception:
+        default_manual_title = ""
+manual_title = st.text_input("Chapter heading — अध्याय का शीर्षक", value=default_manual_title, key="manual_title_v051")
+manual_text = st.text_area("Chapter text — अध्याय की पूरी सामग्री", height=170, key="manual_text_v051",
+                           placeholder="यहाँ अध्याय की सामग्री लिखें या paste करें।")
+if st.button("Save / update chapter text", use_container_width=True):
+    if not manual_title.strip() or not manual_text.strip():
+        st.warning("अध्याय का शीर्षक और पूरी सामग्री—दोनों भरें।")
     else:
-        st.session_state.setdefault("drafts",{})[manual_title.strip()]=manual_text
-        st.success("Chapter save हो गया।")
+        st.session_state.setdefault("drafts", {})[manual_title.strip()] = manual_text
+        st.success(f"‘{manual_title.strip()}’ का टेक्स्ट सेव हो गया।")
 
 if "drafts" in st.session_state and st.session_state.drafts:
     st.divider(); st.header("🔎 Quality Check and Export")
@@ -374,14 +416,17 @@ if "drafts" in st.session_state and st.session_state.drafts:
             if st.button("Delete this chapter",key="draft_del_"+heading):
                 del drafts[heading]; st.rerun()
     outline=st.session_state.get("outline",{})
-    title=st.text_input("Export title",outline.get("title","Untitled Book"),key="export_title")
+    default_export_title = outline.get("title", "Untitled Book")
+    if default_export_title.strip().rstrip(":：").lower() in {"किताब का विषय", "विषय", "book idea", "book topic", "title", "शीर्षक"}:
+        default_export_title = clean_book_title(st.session_state.get("inputs", {}).get("idea", ""), "Untitled Book")
+    title=st.text_input("Export title — अंतिम किताब का शीर्षक",default_export_title,key="export_title")
     errors,warnings=qc(title,drafts)
     total=sum(word_count(v) for v in drafts.values())
     m1,m2=st.columns(2); m1.metric("Total words",f"{total:,}"); m2.metric("Draft chapters",len(drafts))
     for e in errors: st.error(e)
     if not errors: st.success("No blocking issue found by the local checks.")
     for w in warnings: st.warning(w)
-    st.caption("ये preliminary checks हैं; grammar, facts, references और final exports की manual review आवश्यक है।")
+    st.caption("यह केवल शुरुआती स्वचालित जाँच है। यह हिंदी व्याकरण, तथ्य-सत्यता या संदर्भों को प्रमाणित नहीं करती; प्रकाशन से पहले मानवीय समीक्षा आवश्यक है।")
     md=build_md(title,outline,drafts); html_doc=build_html(title,outline,drafts)
     package={"version":VERSION,"saved_at":datetime.now().isoformat(timespec="seconds"),"inputs":st.session_state.get("inputs",{}),"outline":outline,"drafts":drafts,"qc":{"errors":errors,"warnings":warnings}}
     c1,c2,c3=st.columns(3)
