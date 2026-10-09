@@ -1,21 +1,25 @@
-# Universal AI Book Studio — MVP Foundation
+# Universal AI Book Studio — MVP v0.2.0
 
-यह पहला working foundation/prototype है, final production app नहीं।
+मोबाइल से इस्तेमाल के लिए Streamlit आधारित शुरुआती पुस्तक-निर्माण कार्यशाला।
 
-## इसमें क्या है
-- Idea to Book, Manuscript to Book और Idea + Partial Content modes
-- Book type, language, audience, publishing goal और design style selection
-- Master Design Director से production plan बनाना
-- बिना API key के deterministic planning
-- वैकल्पिक Gemini API key के साथ AI-assisted planning
-- TXT/MD upload और JSON plan download
+## अभी क्या काम करता है
+- Idea / manuscript / partial-content input
+- Local production plan और starter outline
+- वैकल्पिक Gemini API से outline और अध्याय का draft
+- अध्याय-वार draft editing
+- Markdown, TXT, HTML और editable DOCX export
+- Content protection निर्देश और verification markers
 
-## अभी बाकी है
-यह अभी पूरा book-writing/publishing agent नहीं है। DOCX/PDF parsing, image generation, full manuscript drafting, PDF/EPUB export, page rendering और visual QC अगले stages हैं।
+## अभी क्या नहीं है
+- Print-ready PDF/EPUB production
+- Actual page layout/rendering and visual QC
+- Image generation, source research automation, KDP preflight certification
+- API key के बिना पूर्ण AI manuscript generation
 
-## Run
-1. Python 3.10+
-2. `pip install -r requirements.txt`
-3. `streamlit run app.py`
+## चलाना
+`pip install -r requirements.txt`
+`streamlit run app.py`
 
-Gemini key optional है। बिना key के local planning mode काम करेगा। Cloud AI की free usage unlimited होने की गारंटी नहीं है।
+Gemini AI features के लिए UI में अपनी API key डालें। API usage पर provider की limits/charges लागू हो सकती हैं। API key को GitHub में कभी commit न करें।
+
+यह MVP है; AI drafts को प्रकाशन से पहले तथ्य-जाँच, संपादन और दृश्य निरीक्षण चाहिए।
