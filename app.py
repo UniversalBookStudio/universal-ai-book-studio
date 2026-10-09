@@ -1,10 +1,10 @@
 import streamlit as st
-import json, re, html, zipfile
+import json, re, html, zipfile, os, tempfile, xml.etree.ElementTree as ET
 from io import BytesIO
 from datetime import datetime
 from xml.sax.saxutils import escape
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 TYPES = ["Auto Detect","Business Book","Novel / Fiction","Children's Book","Workbook / Activity Book","Textbook / Study Notes","Cookbook","Religious / Spiritual","History / Mythology","Self-help","Biography","Poetry","Magazine","Product Catalog","Technical Manual","Travel Book","Other"]
 LANGS = ["Hindi","English","Hinglish","Bengali","Other","Auto Detect"]
 STYLES = ["Director decides automatically","Premium Literary","Minimal","Modern","Luxury","Educational","Illustrated","Devotional","Editorial / Magazine","Custom"]
@@ -166,6 +166,90 @@ def build_epub(title, outline, drafts):
         for name,content in files: z.writestr("OEBPS/"+name,content)
     return out.getvalue()
 
+def build_pdf(title, outline, drafts, font_bytes=None, font_name="BookUnicode"):
+    """Basic PDF export. For Hindi/Bengali, upload a Unicode TTF font; shaping must be visually checked."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.units import mm
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, KeepTogether
+    from reportlab.lib import colors
+    import os, tempfile
+
+    tmp_path = None
+    if font_bytes:
+        with tempfile.NamedTemporaryFile(suffix=".ttf", delete=False) as f:
+            f.write(font_bytes); tmp_path = f.name
+        try:
+            pdfmetrics.registerFont(TTFont(font_name, tmp_path))
+        except Exception:
+            os.unlink(tmp_path)
+            raise ValueError("Font file पढ़ा नहीं जा सका। कृपया valid .ttf font upload करें।")
+    else:
+        font_name = "Helvetica"
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=22*mm, leftMargin=22*mm,
+                            topMargin=22*mm, bottomMargin=20*mm, title=title,
+                            author="Universal AI Book Studio")
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="BookTitle", parent=styles["Title"], fontName=font_name,
+                              fontSize=22, leading=29, alignment=TA_CENTER, spaceAfter=18))
+    styles.add(ParagraphStyle(name="BookSubtitle", parent=styles["Normal"], fontName=font_name,
+                              fontSize=12, leading=18, alignment=TA_CENTER, spaceAfter=30))
+    styles.add(ParagraphStyle(name="Chapter", parent=styles["Heading1"], fontName=font_name,
+                              fontSize=17, leading=23, spaceBefore=8, spaceAfter=16, textColor=colors.HexColor("#243447")))
+    styles.add(ParagraphStyle(name="Section2", parent=styles["Heading2"], fontName=font_name,
+                              fontSize=13, leading=18, spaceBefore=12, spaceAfter=7))
+    styles.add(ParagraphStyle(name="Section3", parent=styles["Heading3"], fontName=font_name,
+                              fontSize=11, leading=15, spaceBefore=9, spaceAfter=5))
+    styles.add(ParagraphStyle(name="BookBody", parent=styles["BodyText"], fontName=font_name,
+                              fontSize=10.5, leading=16, spaceAfter=8, wordWrap="CJK"))
+    story = [Spacer(1, 35*mm), Paragraph(html.escape(title or outline.get("title", "Untitled Book")), styles["BookTitle"])]
+    subtitle = outline.get("subtitle", "")
+    if subtitle: story.append(Paragraph(html.escape(subtitle), styles["BookSubtitle"]))
+    story.append(Spacer(1, 12*mm))
+    for heading, body in drafts.items():
+        story.append(PageBreak())
+        story.append(Paragraph(html.escape(heading), styles["Chapter"]))
+        for line in body.splitlines():
+            line=line.strip()
+            if not line: continue
+            if line.startswith("### "): story.append(Paragraph(html.escape(line[4:]), styles["Section3"]))
+            elif line.startswith("## "): story.append(Paragraph(html.escape(line[3:]), styles["Section2"]))
+            elif line.startswith("# "): story.append(Paragraph(html.escape(line[2:]), styles["Section2"]))
+            else: story.append(Paragraph(html.escape(line).replace("\n", "<br/>"), styles["BookBody"]))
+    def footer(canvas, doc_obj):
+        canvas.saveState(); canvas.setFont(font_name, 8)
+        canvas.drawCentredString(A4[0]/2, 10*mm, str(doc_obj.page))
+        canvas.restoreState()
+    try:
+        doc.build(story, onFirstPage=footer, onLaterPages=footer)
+    finally:
+        if tmp_path and os.path.exists(tmp_path): os.unlink(tmp_path)
+    return buf.getvalue()
+
+
+def validate_epub(epub_bytes):
+    """Structural EPUB package check; this is not a substitute for EPUBCheck or reader testing."""
+    problems=[]
+    try:
+        with zipfile.ZipFile(BytesIO(epub_bytes)) as z:
+            names=set(z.namelist())
+            required={"mimetype","META-INF/container.xml","OEBPS/content.opf","OEBPS/nav.xhtml"}
+            missing=required-names
+            if missing: problems.append("Missing EPUB package files: " + ", ".join(sorted(missing)))
+            if "mimetype" in names and z.read("mimetype") != b"application/epub+zip":
+                problems.append("EPUB mimetype entry is incorrect.")
+            for name in names:
+                if name.endswith((".xml", ".xhtml", ".opf")):
+                    try: ET.fromstring(z.read(name))
+                    except Exception: problems.append("Invalid XML/XHTML: " + name)
+    except Exception as e:
+        problems.append("EPUB ZIP could not be read: " + str(e))
+    return problems
+
 def qc(title, drafts):
     errors=[]; warnings=[]
     if not title.strip(): errors.append("Book title is blank.")
@@ -193,6 +277,11 @@ with st.sidebar:
     style=st.selectbox("Design style",STYLES)
     api_key=st.text_input("Optional Gemini API key",type="password",help="API is unchanged in this version. Never paste the key into GitHub.")
     st.caption("API को छुए बिना local editing, QC और export काम कर सकते हैं।")
+
+st.subheader("PDF font (optional)")
+pdf_font = st.file_uploader("Hindi/Bengali PDF के लिए Unicode .TTF font upload करें", type=["ttf"], help="उदाहरण: Noto Sans Devanagari का .ttf फ़ॉन्ट। बिना Unicode font के Hindi PDF सही नहीं दिख सकती।")
+if pdf_font:
+    st.success("PDF font loaded for this session. इसे GitHub पर upload नहीं किया जाएगा।")
 
 a,b=st.columns([1.1,0.9])
 with a:
@@ -297,6 +386,13 @@ if "drafts" in st.session_state and st.session_state.drafts:
     package={"version":VERSION,"saved_at":datetime.now().isoformat(timespec="seconds"),"inputs":st.session_state.get("inputs",{}),"outline":outline,"drafts":drafts,"qc":{"errors":errors,"warnings":warnings}}
     c1,c2,c3=st.columns(3)
     with c1:
+        try:
+            if language in ["Hindi", "Bengali"] and not pdf_font:
+                st.caption("हिंदी/बंगाली PDF के लिए पहले Unicode .TTF font upload करें।")
+            pdf_bytes = build_pdf(title, outline, drafts, pdf_font.getvalue() if pdf_font else None)
+            st.download_button("Download PDF", pdf_bytes, "book.pdf", "application/pdf", use_container_width=True)
+        except Exception as e:
+            st.warning(f"PDF export नहीं बन सका: {e}")
         st.download_button("Download Markdown",md,"book.md","text/markdown",use_container_width=True)
         st.download_button("Download TXT",md,"book.txt","text/plain",use_container_width=True)
     with c2:
@@ -304,7 +400,14 @@ if "drafts" in st.session_state and st.session_state.drafts:
         try: st.download_button("Download DOCX",build_docx(title,outline,drafts),"book.docx","application/vnd.openxmlformats-officedocument.wordprocessingml.document",use_container_width=True)
         except Exception as e: st.warning(f"DOCX export error: {e}")
     with c3:
-        try: st.download_button("Download EPUB",build_epub(title,outline,drafts),"book.epub","application/epub+zip",use_container_width=True)
+        try:
+            epub_bytes = build_epub(title,outline,drafts)
+            epub_problems = validate_epub(epub_bytes)
+            st.download_button("Download EPUB",epub_bytes,"book.epub","application/epub+zip",use_container_width=True)
+            if epub_problems:
+                for problem in epub_problems: st.warning(problem)
+            else:
+                st.success("EPUB package structure check passed. Reader compatibility and visual formatting still need separate testing.")
         except Exception as e: st.warning(f"EPUB export error: {e}")
         st.download_button("Download project backup",json.dumps(package,ensure_ascii=False,indent=2),"book_project_backup.json","application/json",use_container_width=True)
 
@@ -312,7 +415,7 @@ st.divider()
 st.subheader("Production status")
 st.markdown("""
 - **Available locally:** production plan, starter outline, manual writing/editing, outline edits, local QC, JSON backup, MD/TXT/HTML/DOCX/EPUB exports.
-- **Still pending:** professional PDF typesetting, real page layout engine, image generation, page-by-page visual QC, automated KDP preflight and deeper content-lock enforcement.
+- **Still pending:** advanced page templates, image generation, page-by-page visual QC, automated KDP preflight and deeper content-lock enforcement. PDF export is basic and needs visual review; Hindi/Bengali require a Unicode font upload.
 - **API:** unchanged by this update, as requested.
 """)
 st.caption(f"Universal AI Book Studio v{VERSION} • Keep API keys out of public GitHub.")

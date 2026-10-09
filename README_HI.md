@@ -1,19 +1,18 @@
-# Universal AI Book Studio v0.4.0
+# Universal AI Book Studio v0.5.0
 
 ## इस अपडेट में
-- बिना API के manual chapter बनाना, edit करना और delete करना।
-- Outline title/subtitle/chapter purpose/sections edit करना।
-- अध्याय जोड़ना और हटाना।
-- Word count और preliminary QC warnings।
-- EPUB, DOCX, HTML, Markdown, TXT और JSON project backup export।
-- API integration को जानबूझकर नहीं बदला गया।
+- Basic PDF export जोड़ा गया।
+- Hindi/Bengali PDF के लिए session-only Unicode TTF font upload विकल्प।
+- EPUB package की ZIP/XML structure check।
+- EPUB metadata में चुनी गई language का उपयोग।
+- Manual editing, outline editing, preliminary QC और EPUB/DOCX/HTML/MD/TXT/JSON exports जारी।
+- Gemini API integration को नहीं बदला गया।
 
-## अभी बाकी
-- Professional PDF/page typesetting और print-ready PDF।
-- Image generation और वास्तविक page-by-page visual QC।
-- Automated KDP preflight/certification।
-- Approved content lock का पूर्ण mechanical enforcement।
-- Exported EPUB/DOCX को अलग reader/editor में खोलकर जाँचना आवश्यक है।
+## महत्वपूर्ण सीमाएँ
+- PDF अभी basic typesetting है, print-ready प्रमाणित नहीं। Hindi/Bengali conjunct shaping, page breaks और font rendering की PDF देखकर जाँच जरूरी है।
+- EPUB structure check, official EPUBCheck या वास्तविक e-reader परीक्षण का विकल्प नहीं है।
+- Image generation, वास्तविक page-by-page visual QC, KDP preflight और मजबूत content-lock enforcement अभी बाकी हैं।
+- API key को GitHub, screenshots या public repository में न रखें।
 
-## GitHub पर अपडेट
-`app.py`, `requirements.txt`, `README_HI.md` को repository में replace करके commit करें। API key को source code, screenshots या public repository में न रखें।
+## अपडेट
+`app.py`, `requirements.txt`, `README_HI.md`, `CHANGELOG_HI.md` को repository में replace करके commit करें।
