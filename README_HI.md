@@ -1,22 +1,21 @@
-# Universal AI Book Studio v0.5.1
+# Universal AI Book Studio v0.5.2
 
-## इस अपडेट में सुधार
-- बहु-पंक्ति brief से `किताब का विषय:` जैसे label को हटाकर बेहतर किताब का शीर्षक चुनने की कोशिश।
-- Export title के लिए साफ और संपादन योग्य शीर्षक।
-- Manual chapter में स्पष्ट हिंदी labels: अध्याय का शीर्षक और अध्याय की पूरी सामग्री।
-- Outline का मौजूदा अध्याय चुनकर उसी शीर्षक के नीचे टेक्स्ट सेव करने का विकल्प, ताकि अनजाने duplicate कम हों।
-- QC को साफ तौर पर preliminary बताया गया है; यह तथ्य या व्याकरण प्रमाणित नहीं करता।
-- Gemini API integration को नहीं बदला गया।
+## इस अपडेट में
+- हिंदी/बंगाली/Hinglish PDF के लिए बिना Unicode TTF फ़ॉन्ट के डाउनलोड रोकता है, ताकि खराब बॉक्स वाली PDF न बने।
+- PDF रेंडरिंग के लिए FPDF2 और HarfBuzz text shaping जोड़ा गया।
+- EPUB और HTML में चुनी गई भाषा का metadata/lang tag जोड़ा गया।
+- Manual chapter selector बदलने पर पुराने input का गलत text दिखने की समस्या कम की; चुने गए chapter की saved सामग्री preload होती है।
+- Gemini API logic बदला नहीं गया।
 
-## अभी भी बाकी
-- PDF की वास्तविक visual review और हिंदी font की जाँच।
-- Image generation और page-by-page visual QC।
-- KDP preflight का विस्तृत परीक्षण।
-- Content-lock enforcement को और मजबूत करना।
-- ऐप का live runtime test आवश्यक है।
+## Hindi PDF कैसे बनाएं
+1. ऐप में ऊपर `PDF font (optional)` पर टैप करें।
+2. Unicode `.ttf` font upload करें जो आपकी भाषा के अक्षर support करता हो (Hindi के लिए Noto Sans Devanagari; Bengali के लिए Noto Sans Bengali)।
+3. फिर `Download PDF` दबाएँ।
+4. PDF खोलकर अक्षर, मात्राएँ, page breaks और layout जाँचें।
 
-## GitHub पर लागू करें
-ZIP की चारों फाइलें repository के root में upload करें और मौजूदा फाइलों को replace करें। Commit message:
-`Fix title extraction and manual chapter workflow in v0.5.1`
+Font को GitHub repository में न डालें, जब तक license और redistribution अधिकार स्पष्ट न हों।
 
-API key को GitHub, commit message या सार्वजनिक चैट में न डालें।
+## सीमाएँ
+- यह update syntax और code-path review के आधार पर है; live Streamlit runtime test और generated PDF visual test अभी आवश्यक हैं।
+- Visual page-by-page QC, image generation और Amazon KDP certification शामिल नहीं हैं।
+- API key को GitHub या सार्वजनिक चैट में न डालें।

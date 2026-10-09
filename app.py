@@ -4,7 +4,7 @@ from io import BytesIO
 from datetime import datetime
 from xml.sax.saxutils import escape
 
-VERSION = "0.5.1"
+VERSION = "0.5.2"
 TYPES = ["Auto Detect","Business Book","Novel / Fiction","Children's Book","Workbook / Activity Book","Textbook / Study Notes","Cookbook","Religious / Spiritual","History / Mythology","Self-help","Biography","Poetry","Magazine","Product Catalog","Technical Manual","Travel Book","Other"]
 LANGS = ["Hindi","English","Hinglish","Bengali","Other","Auto Detect"]
 STYLES = ["Director decides automatically","Premium Literary","Minimal","Modern","Luxury","Educational","Illustrated","Devotional","Editorial / Magazine","Custom"]
@@ -133,7 +133,7 @@ def build_md(title, outline, drafts):
     for h,body in drafts.items(): lines += ["## "+h, "", body.strip(), ""]
     return "\n".join(lines).strip()+"\n"
 
-def build_html(title, outline, drafts):
+def build_html(title, outline, drafts, language="Hindi"):
     sections=[]
     for h,body in drafts.items():
         paras=[]
@@ -145,7 +145,8 @@ def build_html(title, outline, drafts):
             elif line.startswith("# "): paras.append("<h2>"+escape(line[2:])+"</h2>")
             else: paras.append("<p>"+escape(line)+"</p>")
         sections.append("<section><h1>"+escape(h)+"</h1>"+"".join(paras)+"</section>")
-    return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+escape(title)+'</title><style>body{max-width:800px;margin:2rem auto;padding:0 1rem;font:18px/1.7 Georgia,serif;color:#222}h1,h2,h3{line-height:1.25}section{margin-bottom:3rem}@media print{body{max-width:none;margin:0}section{page-break-before:always}}</style></head><body><h1>'+escape(title)+'</h1><p><em>'+escape(outline.get("subtitle",""))+'</em></p>'+"".join(sections)+"</body></html>"
+    lang_tag = {'Hindi':'hi','English':'en','Hinglish':'hi-Latn','Bengali':'bn','Other':'und','Auto Detect':'und'}.get(language, 'und')
+    return '<!doctype html><html lang="'+lang_tag+'"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+escape(title)+'</title><style>body{max-width:800px;margin:2rem auto;padding:0 1rem;font:18px/1.7 Georgia,serif;color:#222}h1,h2,h3{line-height:1.25}section{margin-bottom:3rem}@media print{body{max-width:none;margin:0}section{page-break-before:always}}</style></head><body><h1>'+escape(title)+'</h1><p><em>'+escape(outline.get("subtitle",""))+'</em></p>'+"".join(sections)+"</body></html>"
 
 def build_docx(title, outline, drafts):
     from docx import Document
@@ -164,8 +165,9 @@ def build_docx(title, outline, drafts):
             else: doc.add_paragraph(line)
     out=BytesIO(); doc.save(out); return out.getvalue()
 
-def build_epub(title, outline, drafts):
+def build_epub(title, outline, drafts, language="Hindi"):
     title=escape(title or outline.get("title","Untitled Book"))
+    language_code = {"Hindi":"hi", "English":"en", "Hinglish":"hi-Latn", "Bengali":"bn", "Other":"und", "Auto Detect":"und"}.get(language, "und")
     chapters=list(drafts.items()) or [("Draft","<p>No chapter drafts have been added.</p>")]
     files=[]; manifest=[]; spine=[]; nav=[]
     for i,(heading,body) in enumerate(chapters,1):
@@ -182,7 +184,7 @@ def build_epub(title, outline, drafts):
         files.append((name,xhtml)); manifest.append(f'<item id="c{i}" href="{name}" media-type="application/xhtml+xml"/>')
         spine.append(f'<itemref idref="c{i}"/>'); nav.append(f'<li><a href="{name}">{escape(heading)}</a></li>')
     navx='<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Contents</title><meta charset="utf-8"/></head><body><nav epub:type="toc"><h1>Contents</h1><ol>'+"".join(nav)+'</ol></nav></body></html>'
-    opf='<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">urn:uuid:universal-ai-book-studio</dc:identifier><dc:title>'+title+'</dc:title><dc:language>und</dc:language></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="css" href="style.css" media-type="text/css"/>'+''.join(manifest)+'</manifest><spine>'+''.join(spine)+'</spine></package>'
+    opf=f'<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">urn:uuid:universal-ai-book-studio</dc:identifier><dc:title>'+title+'</dc:title><dc:language>{language_code}</dc:language></metadata><manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="css" href="style.css" media-type="text/css"/>'+''.join(manifest)+'</manifest><spine>'+''.join(spine)+'</spine></package>'
     out=BytesIO()
     with zipfile.ZipFile(out,"w") as z:
         z.writestr("mimetype","application/epub+zip",compress_type=zipfile.ZIP_STORED)
@@ -192,70 +194,86 @@ def build_epub(title, outline, drafts):
         for name,content in files: z.writestr("OEBPS/"+name,content)
     return out.getvalue()
 
-def build_pdf(title, outline, drafts, font_bytes=None, font_name="BookUnicode"):
-    """Basic PDF export. For Hindi/Bengali, upload a Unicode TTF font; shaping must be visually checked."""
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER
-    from reportlab.lib.units import mm
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, KeepTogether
-    from reportlab.lib import colors
+def build_pdf(title, outline, drafts, font_bytes=None, font_name="BookUnicode", language="Hindi"):
+    """Create a Unicode PDF using FPDF2 + HarfBuzz shaping. Hindi/Bengali require an uploaded compatible TTF."""
     import os, tempfile
+    from fpdf import FPDF
+
+    needs_indic_font = language in ("Hindi", "Bengali", "Hinglish")
+    if needs_indic_font and not font_bytes:
+        raise ValueError("हिंदी/बंगाली PDF बनाने से पहले Unicode .TTF फ़ॉन्ट अपलोड करें (जैसे Noto Sans Devanagari या Noto Sans Bengali)। खराब/काले बॉक्स वाली PDF बनाने से बचने के लिए export रोक दिया गया है।")
 
     tmp_path = None
+    class BookPDF(FPDF):
+        def footer(self):
+            self.set_y(-12)
+            self.set_font("BookUnicode" if font_bytes else "Helvetica", size=8)
+            self.set_text_color(110, 110, 110)
+            self.cell(0, 6, str(self.page_no()), align="C")
+
+    pdf = BookPDF(format="A4")
+    pdf.set_margins(22, 22, 22)
+    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.set_title(title or outline.get("title", "Untitled Book"))
+    pdf.set_author("Universal AI Book Studio")
+    pdf.set_lang({"Hindi":"hi", "English":"en", "Hinglish":"hi-Latn", "Bengali":"bn", "Other":"und", "Auto Detect":"und"}.get(language, "und"))
     if font_bytes:
         with tempfile.NamedTemporaryFile(suffix=".ttf", delete=False) as f:
-            f.write(font_bytes); tmp_path = f.name
+            f.write(font_bytes)
+            tmp_path = f.name
         try:
-            pdfmetrics.registerFont(TTFont(font_name, tmp_path))
-        except Exception:
-            os.unlink(tmp_path)
-            raise ValueError("Font file पढ़ा नहीं जा सका। कृपया valid .ttf font upload करें।")
+            pdf.add_font("BookUnicode", fname=tmp_path)
+        except Exception as exc:
+            try: os.unlink(tmp_path)
+            except OSError: pass
+            raise ValueError("फ़ॉन्ट पढ़ा नहीं जा सका। कृपया वैध Unicode .TTF फ़ॉन्ट अपलोड करें।") from exc
+        body_font = "BookUnicode"
     else:
-        font_name = "Helvetica"
-    buf = BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=22*mm, leftMargin=22*mm,
-                            topMargin=22*mm, bottomMargin=20*mm, title=title,
-                            author="Universal AI Book Studio")
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name="BookTitle", parent=styles["Title"], fontName=font_name,
-                              fontSize=22, leading=29, alignment=TA_CENTER, spaceAfter=18))
-    styles.add(ParagraphStyle(name="BookSubtitle", parent=styles["Normal"], fontName=font_name,
-                              fontSize=12, leading=18, alignment=TA_CENTER, spaceAfter=30))
-    styles.add(ParagraphStyle(name="Chapter", parent=styles["Heading1"], fontName=font_name,
-                              fontSize=17, leading=23, spaceBefore=8, spaceAfter=16, textColor=colors.HexColor("#243447")))
-    styles.add(ParagraphStyle(name="Section2", parent=styles["Heading2"], fontName=font_name,
-                              fontSize=13, leading=18, spaceBefore=12, spaceAfter=7))
-    styles.add(ParagraphStyle(name="Section3", parent=styles["Heading3"], fontName=font_name,
-                              fontSize=11, leading=15, spaceBefore=9, spaceAfter=5))
-    styles.add(ParagraphStyle(name="BookBody", parent=styles["BodyText"], fontName=font_name,
-                              fontSize=10.5, leading=16, spaceAfter=8, wordWrap="CJK"))
-    story = [Spacer(1, 35*mm), Paragraph(html.escape(title or outline.get("title", "Untitled Book")), styles["BookTitle"])]
-    subtitle = outline.get("subtitle", "")
-    if subtitle: story.append(Paragraph(html.escape(subtitle), styles["BookSubtitle"]))
-    story.append(Spacer(1, 12*mm))
-    for heading, body in drafts.items():
-        story.append(PageBreak())
-        story.append(Paragraph(html.escape(heading), styles["Chapter"]))
-        for line in body.splitlines():
-            line=line.strip()
-            if not line: continue
-            if line.startswith("### "): story.append(Paragraph(html.escape(line[4:]), styles["Section3"]))
-            elif line.startswith("## "): story.append(Paragraph(html.escape(line[3:]), styles["Section2"]))
-            elif line.startswith("# "): story.append(Paragraph(html.escape(line[2:]), styles["Section2"]))
-            else: story.append(Paragraph(html.escape(line).replace("\n", "<br/>"), styles["BookBody"]))
-    def footer(canvas, doc_obj):
-        canvas.saveState(); canvas.setFont(font_name, 8)
-        canvas.drawCentredString(A4[0]/2, 10*mm, str(doc_obj.page))
-        canvas.restoreState()
-    try:
-        doc.build(story, onFirstPage=footer, onLaterPages=footer)
-    finally:
-        if tmp_path and os.path.exists(tmp_path): os.unlink(tmp_path)
-    return buf.getvalue()
+        body_font = "Helvetica"
 
+    try:
+        # HarfBuzz shaping handles complex-script glyph positioning when supported by the uploaded font.
+        if font_bytes:
+            try:
+                pdf.set_text_shaping(True)
+            except Exception as exc:
+                raise ValueError("Unicode shaping उपलब्ध नहीं है। requirements.txt में fpdf2 और uharfbuzz अपडेट करें।") from exc
+        pdf.add_page()
+        pdf.set_y(62)
+        pdf.set_font(body_font, style="B" if not font_bytes else "", size=23)
+        pdf.set_text_color(35, 49, 67)
+        pdf.multi_cell(0, 12, title or outline.get("title", "Untitled Book"), align="C")
+        subtitle = (outline.get("subtitle") or "").strip()
+        if subtitle:
+            pdf.ln(8)
+            pdf.set_font(body_font, size=12)
+            pdf.set_text_color(80, 80, 80)
+            pdf.multi_cell(0, 8, subtitle, align="C")
+        for heading, body in drafts.items():
+            pdf.add_page()
+            pdf.set_font(body_font, size=17)
+            pdf.set_text_color(35, 49, 67)
+            pdf.multi_cell(0, 10, heading)
+            pdf.ln(3)
+            for raw in body.splitlines():
+                line = raw.strip()
+                if not line:
+                    pdf.ln(2)
+                    continue
+                if line.startswith("### "):
+                    pdf.ln(2); pdf.set_font(body_font, size=12); pdf.set_text_color(45, 55, 65)
+                    pdf.multi_cell(0, 7, line[4:])
+                elif line.startswith("## ") or line.startswith("# "):
+                    pdf.ln(2); pdf.set_font(body_font, size=14); pdf.set_text_color(45, 55, 65)
+                    pdf.multi_cell(0, 8, line.lstrip("# "))
+                else:
+                    pdf.set_font(body_font, size=11); pdf.set_text_color(25, 25, 25)
+                    pdf.multi_cell(0, 7, line)
+                    pdf.ln(1.5)
+        return bytes(pdf.output())
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 def validate_epub(epub_bytes):
     """Structural EPUB package check; this is not a substitute for EPUBCheck or reader testing."""
@@ -319,7 +337,7 @@ with a:
 with b:
     st.subheader("Master Design Director")
     st.markdown("- Genre-aware production planning\n- No forced page count\n- Editable outline and chapters\n- Preliminary content QC\n- EPUB / DOCX / HTML / MD / TXT exports")
-    st.info("PDF export उपलब्ध है, लेकिन अभी basic है। हिंदी/बंगाली के लिए सही Unicode TTF फ़ॉन्ट दें। वास्तविक पेज-दर-पेज विज़ुअल QC, image generation और KDP certification अभी उपलब्ध नहीं हैं।")
+    st.info("PDF export के लिए FPDF2 + HarfBuzz shaping उपयोग होता है। हिंदी/बंगाली/Hinglish में पहले सही Unicode TTF फ़ॉन्ट upload करें। हर PDF को फिर भी देखकर जाँचें; page-by-page visual QC, image generation और KDP certification अभी उपलब्ध नहीं हैं।")
 
 if st.button("Create / refresh production plan",type="primary",use_container_width=True):
     if not idea.strip() and not source.strip(): st.warning("Idea लिखें या manuscript upload करें।")
@@ -397,14 +415,21 @@ if manual_target != "नया अध्याय बनाएँ":
         default_manual_title = outline_chapters_for_manual[manual_index].get("title", "")
     except Exception:
         default_manual_title = ""
-manual_title = st.text_input("Chapter heading — अध्याय का शीर्षक", value=default_manual_title, key="manual_title_v051")
-manual_text = st.text_area("Chapter text — अध्याय की पूरी सामग्री", height=170, key="manual_text_v051",
+existing_body = st.session_state.get("drafts", {}).get(default_manual_title, "") if default_manual_title else ""
+manual_key = re.sub(r"[^a-zA-Z0-9_-]+", "_", manual_target)[:45]
+manual_title = st.text_input("Chapter heading — अध्याय का शीर्षक", value=default_manual_title, key=f"manual_title_{manual_key}")
+manual_text = st.text_area("Chapter text — अध्याय की पूरी सामग्री", value=existing_body, height=170, key=f"manual_text_{manual_key}",
                            placeholder="यहाँ अध्याय की सामग्री लिखें या paste करें।")
 if st.button("Save / update chapter text", use_container_width=True):
     if not manual_title.strip() or not manual_text.strip():
         st.warning("अध्याय का शीर्षक और पूरी सामग्री—दोनों भरें।")
     else:
-        st.session_state.setdefault("drafts", {})[manual_title.strip()] = manual_text
+        drafts_store = st.session_state.setdefault("drafts", {})
+        if default_manual_title and default_manual_title != manual_title.strip() and default_manual_title in drafts_store:
+            old_body = drafts_store.pop(default_manual_title)
+            drafts_store[manual_title.strip()] = manual_text.strip() or old_body
+        else:
+            drafts_store[manual_title.strip()] = manual_text
         st.success(f"‘{manual_title.strip()}’ का टेक्स्ट सेव हो गया।")
 
 if "drafts" in st.session_state and st.session_state.drafts:
@@ -427,17 +452,18 @@ if "drafts" in st.session_state and st.session_state.drafts:
     if not errors: st.success("No blocking issue found by the local checks.")
     for w in warnings: st.warning(w)
     st.caption("यह केवल शुरुआती स्वचालित जाँच है। यह हिंदी व्याकरण, तथ्य-सत्यता या संदर्भों को प्रमाणित नहीं करती; प्रकाशन से पहले मानवीय समीक्षा आवश्यक है।")
-    md=build_md(title,outline,drafts); html_doc=build_html(title,outline,drafts)
+    md=build_md(title,outline,drafts); html_doc=build_html(title,outline,drafts,language)
     package={"version":VERSION,"saved_at":datetime.now().isoformat(timespec="seconds"),"inputs":st.session_state.get("inputs",{}),"outline":outline,"drafts":drafts,"qc":{"errors":errors,"warnings":warnings}}
     c1,c2,c3=st.columns(3)
     with c1:
-        try:
-            if language in ["Hindi", "Bengali"] and not pdf_font:
-                st.caption("हिंदी/बंगाली PDF के लिए पहले Unicode .TTF font upload करें।")
-            pdf_bytes = build_pdf(title, outline, drafts, pdf_font.getvalue() if pdf_font else None)
-            st.download_button("Download PDF", pdf_bytes, "book.pdf", "application/pdf", use_container_width=True)
-        except Exception as e:
-            st.warning(f"PDF export नहीं बन सका: {e}")
+        if language in ["Hindi", "Bengali", "Hinglish"] and not pdf_font:
+            st.warning("हिंदी/बंगाली PDF अभी नहीं बनाई गई: पहले ऊपर PDF font में Unicode .TTF upload करें। बिना फ़ॉन्ट के PDF देने से काले बॉक्स आ सकते हैं।")
+        else:
+            try:
+                pdf_bytes = build_pdf(title, outline, drafts, pdf_font.getvalue() if pdf_font else None, language=language)
+                st.download_button("Download PDF", pdf_bytes, "book.pdf", "application/pdf", use_container_width=True)
+            except Exception as e:
+                st.error(f"PDF export नहीं बन सका: {e}")
         st.download_button("Download Markdown",md,"book.md","text/markdown",use_container_width=True)
         st.download_button("Download TXT",md,"book.txt","text/plain",use_container_width=True)
     with c2:
@@ -446,7 +472,7 @@ if "drafts" in st.session_state and st.session_state.drafts:
         except Exception as e: st.warning(f"DOCX export error: {e}")
     with c3:
         try:
-            epub_bytes = build_epub(title,outline,drafts)
+            epub_bytes = build_epub(title,outline,drafts,language)
             epub_problems = validate_epub(epub_bytes)
             st.download_button("Download EPUB",epub_bytes,"book.epub","application/epub+zip",use_container_width=True)
             if epub_problems:
@@ -460,7 +486,7 @@ st.divider()
 st.subheader("Production status")
 st.markdown("""
 - **Available locally:** production plan, starter outline, manual writing/editing, outline edits, local QC, JSON backup, MD/TXT/HTML/DOCX/EPUB exports.
-- **Still pending:** advanced page templates, image generation, page-by-page visual QC, automated KDP preflight and deeper content-lock enforcement. PDF export is basic and needs visual review; Hindi/Bengali require a Unicode font upload.
+- **Still pending:** advanced page templates, image generation, page-by-page visual QC, automated KDP preflight and deeper content-lock enforcement. PDF uses FPDF2/HarfBuzz shaping and requires an uploaded Unicode TTF for Hindi/Bengali/Hinglish; visual review is still required.
 - **API:** unchanged by this update, as requested.
 """)
 st.caption(f"Universal AI Book Studio v{VERSION} • Keep API keys out of public GitHub.")
